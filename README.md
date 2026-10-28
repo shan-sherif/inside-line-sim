@@ -272,4 +272,6 @@ If a change doesn't show up after reloading, press **Ctrl+F5** to bypass the bro
 
 I wanted to experiment and understand how the varied conditions when paddling affects the boat, and to help illustrate and identify potential tactics to save strength or to improve performance. Being able to find a good line when paddling is extremely useful to be efficient and also perform better in longer distances.
 
+The live site counts visits with [GoatCounter](https://www.goatcounter.com/), which doesn't use cookies or collect personal data. Running the page locally isn't counted.
+
 Inside-line-sim was written with the help of Claude Opus 5.5, an AI model by Anthropic, and the result was checked manually.
