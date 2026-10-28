@@ -1,7 +1,7 @@
 import { BOATS } from './boats.js';
 import { DIRECTIONS, SCENARIOS, PASSERS, COURSES, WASH_MODES, BANK_TYPES, BANK_CLEARANCE, passerClearance, buildWorld, stepWorld, benchmark, washSources } from './scenarios.js';
 import { RIVER, RIVER_SHAPES, BANK_EDGE, setRiver, clamp, froude, powerWash } from './physics.js';
-import { createRenderer, boatColor } from './render.js';
+import { createRenderer, boatColor, waterColour } from './render.js';
 import { buildBoatEditor, loadSavedBoats } from './boatEditor.js';
 import { createRiverEditor } from './riverEditor.js';
 
@@ -222,6 +222,7 @@ function showControls() {
     motor: !!sc.passer && passerMotor,
     otherPower: racers || (!!sc.passer && !passerMotor),
     rebound: $('wash').value === 'rebound',
+    washKey: $('wash').value !== 'off',
   };
   for (const el of document.querySelectorAll('[data-control]')) el.hidden = !show[el.dataset.control];
 
@@ -299,7 +300,30 @@ function bindPlayerInput() {
   }
 }
 
+// Colour key for the water, built from the same colour function as the
+// drawing so the two always match. Wash is shown over deep mid-river water.
+function buildLegend() {
+  const rgb = (c) => `rgb(${c.join(',')})`;
+  const steps = (from, to, n, colour) =>
+    Array.from({ length: n + 1 }, (_, i) => rgb(colour(from + ((to - from) * i) / n)));
+  const DEEP = 0.8;
+  const items = [
+    { label: 'Depth', colours: steps(0, 1, 8, (t) => waterColour(t)), ticks: ['shallow', 'deep'] },
+    { label: 'Wash height (trough to crest)', control: 'washKey', colours: steps(-0.2, 0.2, 16, (h) => waterColour(DEEP, h)),
+      ticks: ['−20 cm', '0', '+20 cm'] },
+    { label: 'Bank rebound (exaggerated)', control: 'rebound', colours: steps(-0.015, 0.015, 30, (h) => waterColour(DEEP, 0, h)),
+      ticks: ['−1 cm', '0', '+1 cm'] },
+  ];
+  $('legend').innerHTML = items.map((it) => `
+    <div class="legend-item"${it.control ? ` data-control="${it.control}"` : ''}>
+      <span>${it.label}</span>
+      <span class="legend-bar" style="background: linear-gradient(to right, ${it.colours.join(', ')})"></span>
+      <span class="legend-ticks">${it.ticks.map((t) => `<span>${t}</span>`).join('')}</span>
+    </div>`).join('');
+}
+
 function buildControls() {
+  buildLegend();
   $('direction').innerHTML = Object.entries(DIRECTIONS)
     .map(([k, d]) => `<option value="${k}">${d.label}</option>`).join('');
   $('scenario').innerHTML = Object.entries(SCENARIOS)

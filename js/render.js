@@ -13,6 +13,25 @@ const GAUGE_SPACE = 84;               // CSS pixels the steering gauge takes at 
 const MIN_HULL_PX = 25;               // CSS pixels long, and
 const MIN_BEAM_PX = 3;                // wide, below which hulls show as markers
 
+// The water's colour, shared by the drawing and the colour key so they
+// always match. depthShare: 0 at the shallowest, 1 at the deepest point.
+// wash: height (m) of the boats' own waves, lightening crests and darkening
+// troughs by WASH_SHADE per metre. rebound: height (m) of waves reflected off
+// a bank, blended towards magenta (crests) or deep purple (troughs), boosted
+// so even centimetre-high reflections show.
+const WASH_SHADE = 500;
+export function waterColour(depthShare, wash = 0, rebound = 0) {
+  const t = depthShare;
+  const s = wash * WASH_SHADE;
+  let c = [125 - 110 * t + s, 195 - 140 * t + s, 185 - 75 * t + s];
+  if (rebound) {
+    const a = 0.85 * Math.sqrt(Math.min(1, Math.abs(rebound) / REBOUND_FULL));
+    const target = rebound > 0 ? REBOUND_CREST : REBOUND_TROUGH;
+    c = c.map((v, i) => v + (target[i] - v) * a);
+  }
+  return c.map((v) => clamp(Math.round(v), 0, 255));
+}
+
 export function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
   const water = document.createElement('canvas');
@@ -57,17 +76,9 @@ export function createRenderer(canvas) {
       water.height = rows;
       img = wctx.createImageData(cols, rows);
     }
-    // Depth colour per column, from pale green-blue shallows to deep navy,
-    // with wave shading added on top.
-    const base = [];
-    for (let i = 0; i < cols; i++) {
-      const t = depthAt(((i + 0.5) * RIVER.width) / cols) / RIVER.deepest;
-      base.push([125 - 110 * t, 195 - 140 * t, 185 - 75 * t]);
-    }
-    // Waves straight from the boats shade the water white and dark. Waves
-    // rebounding off a bank blend the water towards magenta (crests) or deep
-    // purple (troughs); the blend is boosted so even centimetre-high
-    // reflections show.
+    // Depth share per column, so the colour can be worked out per pixel.
+    const depth = [];
+    for (let i = 0; i < cols; i++) depth.push(depthAt(((i + 0.5) * RIVER.width) / cols) / RIVER.deepest);
     const direct = sources.filter((src) => src.bankX == null);
     const rebound = sources.filter((src) => src.bankX != null);
     const d = img.data;
@@ -76,18 +87,11 @@ export function createRenderer(canvas) {
       const y = top - (j + 0.5) / res;
       for (let i = 0; i < cols; i++) {
         const x = ((i + 0.5) * RIVER.width) / cols;
-        const shade = direct.length ? totalWash(direct, x, y) * 500 : 0;
-        let r = base[i][0] + shade;
-        let g = base[i][1] + shade;
-        let b = base[i][2] + shade;
-        if (rebound.length) {
-          const h = totalWash(rebound, x, y);
-          const a = 0.85 * Math.sqrt(Math.min(1, Math.abs(h) / REBOUND_FULL));
-          const [tr, tg, tb] = h > 0 ? REBOUND_CREST : REBOUND_TROUGH;
-          r += (tr - r) * a;
-          g += (tg - g) * a;
-          b += (tb - b) * a;
-        }
+        const [r, g, b] = waterColour(
+          depth[i],
+          direct.length ? totalWash(direct, x, y) : 0,
+          rebound.length ? totalWash(rebound, x, y) : 0,
+        );
         const k = (j * cols + i) * 4;
         d[k] = r;
         d[k + 1] = g;
@@ -262,6 +266,40 @@ export function createRenderer(canvas) {
     ctx.fillText('━ over ground', cx, ty + 16 * dpr);
     ctx.fillStyle = b.spec.color;
     ctx.fillText(`━ through water ${water.toFixed(1)}`, cx, ty + 29 * dpr);
+    ctx.textAlign = 'start';
+    drawHeading(b, px, py + ph + 6 * dpr, pw);
+  }
+
+  // Where the bow points, and the direction the boat is actually moving over
+  // the ground, both measured from straight up the course. A gap between the
+  // two means current or wash is pushing the boat sideways.
+  function drawHeading(b, px, py, pw) {
+    const dpr = window.devicePixelRatio || 1;
+    const UP = Math.PI / 2;
+    const angle = (a) => {
+      const deg = (Math.atan2(Math.sin(a - UP), Math.cos(a - UP)) * 180) / Math.PI;
+      return Math.abs(deg) < 0.05 ? '0.0° straight' : `${Math.abs(deg).toFixed(1)}° ${deg > 0 ? 'left' : 'right'}`;
+    };
+    const moving = Math.hypot(b.vx, b.vy) > 0.3 ? angle(Math.atan2(b.vy, b.vx)) : '—';
+    ctx.fillStyle = 'rgba(10, 20, 30, 0.72)';
+    ctx.beginPath();
+    ctx.roundRect(px, py, pw, 40 * dpr, 10 * dpr);
+    ctx.fill();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const lx = px + 10 * dpr;
+    const vx = px + pw - 10 * dpr;
+    for (const [i, label, value] of [[0, 'Heading', angle(b.psi)], [1, 'Moving', moving]]) {
+      const y = py + (13 + i * 15) * dpr;
+      ctx.font = `${10 * dpr}px system-ui, sans-serif`;
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.textAlign = 'left';
+      ctx.fillText(label, lx, y);
+      ctx.font = `600 ${11 * dpr}px system-ui, sans-serif`;
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'right';
+      ctx.fillText(value, vx, y);
+    }
     ctx.textAlign = 'start';
   }
 
