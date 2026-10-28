@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inside Line Sim</title>
+  <meta name="description" content="A river racing simulator for canoes and kayaks. Find the faster water before race day.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1>Inside Line Sim</h1>
+    <p>Find the faster water before race day. See how canoes and kayaks handle current, wash and the boats around you.</p>
+  </header>
+
+  <main>
+    <section class="stage">
+      <canvas id="river" aria-label="Top-down view of the river and boats"></canvas>
+      <div class="transport">
+        <button id="play" type="button">Pause</button>
+        <button id="reset" type="button">Restart</button>
+        <label>Speed
+          <select id="simSpeed">
+            <option value="1">1×</option>
+            <option value="2">2×</option>
+            <option value="5" selected>5×</option>
+            <option value="10">10×</option>
+            <option value="20">20×</option>
+          </select>
+        </label>
+        <span id="you" class="you"></span>
+        <span id="clock" class="clock">0.0 s</span>
+      </div>
+      <div id="pad" class="pad" hidden>
+        <button type="button" data-dir="left" aria-label="Steer left">◀</button>
+        <button type="button" data-dir="down" aria-label="Less power">▼</button>
+        <button type="button" data-dir="up" aria-label="More power">▲</button>
+        <button type="button" data-dir="right" aria-label="Steer right">▶</button>
+      </div>
+    </section>
+
+    <section class="panel river-panel">
+      <h2>River</h2>
+      <div class="pair">
+        <label class="field">Direction
+          <select id="direction" data-restart></select>
+        </label>
+        <label class="field">View
+          <select id="view" data-restart>
+            <option value="fixed">Fixed</option>
+            <option value="follow" selected>Follow me</option>          </select>
+        </label>
+      </div>
+      <div class="pair">
+        <label class="field">Course
+          <select id="course" data-restart></select>
+        </label>
+        <label class="field">River current <output></output>
+          <input id="current" type="range" min="0" max="7.2" step="0.1" value="2" data-unit=" km/h">
+        </label>
+      </div>
+      <label class="field">Wash
+        <select id="wash" data-restart></select>
+      </label>
+      <fieldset class="group" data-control="rebound">
+        <legend>Bank rebound</legend>
+        <div class="pair">
+          <label class="field">Left bank
+            <select id="bankLeft" data-restart></select>
+          </label>
+          <label class="field">Right bank
+            <select id="bankRight" data-restart></select>
+          </label>
+        </div>
+        <div class="pair">
+          <label class="field">Reflects <output></output>
+            <input id="reboundLeft" type="range" min="0" max="100" step="5" value="30" data-unit="%" data-restart>
+          </label>
+          <label class="field">Reflects <output></output>
+            <input id="reboundRight" type="range" min="0" max="100" step="5" value="30" data-unit="%" data-restart>
+          </label>
+        </div>
+      </fieldset>
+      <fieldset class="group">
+        <legend>River shape</legend>
+        <label class="field">Bed shape
+          <select id="riverShape" data-restart></select>
+        </label>
+        <div class="pair">
+          <label class="field">Width <output></output>
+            <input id="riverWidth" type="range" min="10" max="60" step="1" value="20" data-unit=" m" data-restart>
+          </label>
+          <label class="field">Deepest point <output></output>
+            <input id="riverDepth" type="range" min="0.5" max="6" step="0.1" value="3" data-unit=" m" data-restart>
+          </label>
+        </div>
+        <canvas id="riverEditor" class="river-editor" aria-label="Cross-section of the river bed. Drag the points to reshape it."></canvas>
+        <p class="hint">Drag the points to reshape the bed. The current, in yellow, is fastest over the deepest water.</p>
+      </fieldset>
+      <label class="check">
+        <input id="showFlow" type="checkbox">
+        Show current speed across the river
+      </label>
+    </section>
+
+    <section class="panel setup-panel">
+      <h2>Race</h2>
+      <label class="field">Scenario
+        <select id="scenario" data-restart></select>
+      </label>
+      <fieldset class="group">
+        <legend>Your boat</legend>
+        <div class="pair">
+          <label class="field">Boat
+            <select id="yourBoat" data-restart></select>
+          </label>
+          <label class="field">Paddled by
+            <select id="pilot" data-restart>
+              <option value="computer">Computer</option>
+              <option value="me">Me (arrow keys)</option>
+            </select>
+          </label>
+        </div>
+        <p id="keysHint" class="hint" hidden>← → or drag the steering gauge to steer, ↑ ↓ to change power.</p>
+        <label class="field">Power per paddler <output></output>
+          <input id="power" type="range" min="0" max="300" step="10" value="180" data-unit=" W">
+        </label>
+        <label class="field">Your line, from the middle <output></output>
+          <span class="slider-wrap">
+            <input id="lane" class="position" type="range" min="-18" max="18" step="0.5" value="0" data-restart>
+            <span id="laneNow" class="now-marker" aria-hidden="true"></span>
+          </span>
+        </label>
+        <p id="laneNowText" class="hint now-text"></p>
+      </fieldset>
+
+      <fieldset class="group" data-control="others">
+        <legend>Other boats</legend>
+        <div class="pair">
+          <label class="field" data-control="neighbour">Racing with you
+            <select id="neighbourBoat" data-restart></select>
+          </label>
+          <label class="field" data-control="passer">Passing boat
+            <select id="passerBoat" data-restart></select>
+          </label>
+        </div>
+        <label class="field" data-control="formation">Their pace
+          <select id="pace" data-restart>
+            <option value="constant">Constant power per paddler</option>
+            <option value="formation" selected>Hold the formation (balance power)</option>
+          </select>
+        </label>
+        <p class="hint" data-control="formation">Holding the formation, the front boat paddles at their power and the side boats adjust theirs to keep their places.</p>
+        <label class="field" data-control="otherPower">Their power per paddler <output></output>
+          <input id="otherPower" type="range" min="0" max="300" step="10" value="160" data-unit=" W" data-restart>
+        </label>
+        <label class="field" data-control="front">Boat in front is ahead by <output></output>
+          <input id="frontGap" type="range" min="2" max="20" step="1" value="5" data-unit=" m" data-restart>
+        </label>
+        <label class="field" data-control="sides">Side boats, from the middle <output></output>
+          <input id="gap" type="range" min="1.5" max="10" step="0.5" value="2" data-unit=" m" data-restart>
+        </label>
+        <label class="field" data-control="theirLine">Their line, from the middle <output></output>
+          <input id="theirLine" class="position" type="range" min="-8" max="8" step="0.5" value="2" data-restart>
+        </label>
+        <label class="field" data-control="headStart">Their head start, beside you <output></output>
+          <input id="headStart" type="range" min="-10" max="10" step="1" value="3" data-unit=" m" data-restart>
+        </label>
+        <label class="field" data-control="motor">Passing boat speed <output></output>
+          <input id="motorSpeed" type="range" min="5" max="45" step="1" value="18" data-unit=" km/h" data-restart>
+        </label>
+        <label class="field" data-control="motor">Passing boat wash size <output></output>
+          <input id="washScale" type="range" min="0.5" max="2" step="0.1" value="1" data-unit="×" data-restart>
+        </label>
+        <p id="washNow" class="hint" data-control="motor"></p>
+      </fieldset>
+    </section>
+
+    <section class="results">
+      <h2>Results</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Boat</th>
+              <th>Time</th>
+              <th>Speed over ground</th>
+              <th>Power per paddler</th>
+              <th>Steering</th>
+              <th>Worst roll</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="resultRows"></tbody>
+        </table>
+      </div>
+      <p id="verdict" class="verdict"></p>
+      <p class="note">Boat figures are illustrative, not measured hull data. Roll is shown as a % of a rough capsize limit for each boat.</p>
+    </section>
+
+    <section class="settings">
+      <div class="settings-head">
+        <h2>Boat settings</h2>
+        <button id="resetBoats" type="button">Reset to defaults</button>
+      </div>
+      <p class="note">Edit a value and the run restarts with it. Changes are saved in this browser only.</p>
+      <div class="table-wrap">
+        <table id="boatTable" class="boat-table"></table>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
