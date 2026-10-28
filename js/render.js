@@ -5,8 +5,8 @@ const BANK = 4;                       // metres of land kept visible on each sid
 const RES = 2;                        // most water texture pixels per metre
 const BUDGET = 9000;                  // most wave samples per frame, to keep drawing smooth
 const REBOUND_FULL = 0.01;            // metres: a reflected wave this high shows in full colour
-const REBOUND_CREST = [255, 80, 220]; // magenta
-const REBOUND_TROUGH = [70, 10, 100]; // deep purple
+const REBOUND_CREST = [200, 200, 200]; // light grey
+const REBOUND_TROUGH = [70, 70, 70];   // dark grey
 const FOLLOW_LEN = 25;                // metres of river shown when following
 const FOLLOW_AT = 0.45;               // your boat sits this far up the screen, leaving room for its wake
 const GAUGE_SPACE = 84;               // CSS pixels the steering gauge takes at the bottom
@@ -17,19 +17,36 @@ const MIN_BEAM_PX = 3;                // wide, below which hulls show as markers
 // always match. depthShare: 0 at the shallowest, 1 at the deepest point.
 // wash: height (m) of the boats' own waves, lightening crests and darkening
 // troughs by WASH_SHADE per metre. rebound: height (m) of waves reflected off
-// a bank, blended towards magenta (crests) or deep purple (troughs), boosted
-// so even centimetre-high reflections show.
+// a bank, shown in grey (see withRebound).
 const WASH_SHADE = 500;
 export function waterColour(depthShare, wash = 0, rebound = 0) {
   const t = depthShare;
   const s = wash * WASH_SHADE;
-  let c = [125 - 110 * t + s, 195 - 140 * t + s, 185 - 75 * t + s];
+  return withRebound([125 - 110 * t + s, 195 - 140 * t + s, 185 - 75 * t + s], rebound);
+}
+
+// Waves reflected off a bank blend the colour towards light grey (crests) or
+// dark grey (troughs), boosted so even centimetre-high reflections show.
+function withRebound(c, rebound) {
   if (rebound) {
     const a = 0.85 * Math.sqrt(Math.min(1, Math.abs(rebound) / REBOUND_FULL));
     const target = rebound > 0 ? REBOUND_CREST : REBOUND_TROUGH;
     c = c.map((v, i) => v + (target[i] - v) * a);
   }
   return c.map((v) => clamp(Math.round(v), 0, 255));
+}
+
+// Scientific colours: wave height on the rainbow scale used in wave-pattern
+// plots, from blue troughs through green flat water to red crests, full colour
+// at ±WAVE_MAP_RANGE. Depth only dims it: deeper water is up to 35% darker.
+// height is the total of all waves, or only the boats' own wash when rebound
+// is shown separately, in grey.
+export const WAVE_MAP_RANGE = 0.1;
+export function waveMapColour(depthShare, height, rebound = 0) {
+  const x = clamp(0.5 + height / (2 * WAVE_MAP_RANGE), 0, 1);
+  const band = (centre) => clamp(1.5 - Math.abs(4 * x - centre), 0, 1);
+  const light = 1 - 0.35 * depthShare;
+  return withRebound([band(3), band(2), band(1)].map((v) => 255 * v * light), rebound);
 }
 
 export function createRenderer(canvas) {
@@ -41,6 +58,8 @@ export function createRenderer(canvas) {
   // f is how far across the river a marker is (0 to 1), so markers follow the width.
   const particles = Array.from({ length: 160 }, () => ({ f: Math.random(), y: NaN }));
   let cam = null;
+  let sci = false;
+  let sciRebound = false;
 
   function resize() {
     const dpr = window.devicePixelRatio || 1;
@@ -87,11 +106,16 @@ export function createRenderer(canvas) {
       const y = top - (j + 0.5) / res;
       for (let i = 0; i < cols; i++) {
         const x = ((i + 0.5) * RIVER.width) / cols;
-        const [r, g, b] = waterColour(
-          depth[i],
-          direct.length ? totalWash(direct, x, y) : 0,
-          rebound.length ? totalWash(rebound, x, y) : 0,
-        );
+        let colour;
+        if (sci && !sciRebound) {
+          // One map of every wave together: what the boats feel.
+          colour = waveMapColour(depth[i], sources.length ? totalWash(sources, x, y) : 0);
+        } else {
+          const wash = direct.length ? totalWash(direct, x, y) : 0;
+          const bounced = rebound.length ? totalWash(rebound, x, y) : 0;
+          colour = sci ? waveMapColour(depth[i], wash, bounced) : waterColour(depth[i], wash, bounced);
+        }
+        const [r, g, b] = colour;
         const k = (j * cols + i) * 4;
         d[k] = r;
         d[k + 1] = g;
@@ -126,7 +150,7 @@ export function createRenderer(canvas) {
   }
 
   function drawBanks() {
-    ctx.fillStyle = '#c9b68a';
+    ctx.fillStyle = sci ? '#9aa3ab' : '#c9b68a';
     const edge = Math.max(2, cam.scale * 0.5);
     ctx.fillRect(sx(0) - edge, 0, edge, canvas.height);
     ctx.fillRect(sx(RIVER.width), 0, edge, canvas.height);
@@ -750,9 +774,13 @@ export function createRenderer(canvas) {
 
   // sources: the wakes on the water, from washSources().
   // flowProfile: the max current (m/s) to draw flow profiles for, or null.
-  function draw(world, view, sources, flowProfile = null) {
+  // scientific: draw the water as a wave-height map, with grey land and banks;
+  // splitRebound: in that map, show bank rebound separately, in grey.
+  function draw(world, view, sources, flowProfile = null, scientific = false, splitRebound = false) {
     cam = camera(world, view);
-    ctx.fillStyle = '#5b7d3a';
+    sci = scientific;
+    sciRebound = splitRebound;
+    ctx.fillStyle = sci ? '#262c33' : '#5b7d3a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     paintWater(sources);
     drawBanks();

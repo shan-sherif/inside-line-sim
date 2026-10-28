@@ -213,6 +213,7 @@ input[type="range"].position::-moz-range-thumb {
 
 .check { display: flex; align-items: center; gap: 8px; margin: -4px 0 12px; font-size: 0.9rem; cursor: pointer; }
 .check input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.check.sub { margin-left: 24px; }
 
 .river-editor {
   display: block;

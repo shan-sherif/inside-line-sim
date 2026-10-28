@@ -1,7 +1,7 @@
 import { BOATS } from './boats.js';
 import { DIRECTIONS, SCENARIOS, PASSERS, COURSES, WASH_MODES, BANK_TYPES, BANK_CLEARANCE, passerClearance, buildWorld, stepWorld, benchmark, washSources } from './scenarios.js';
 import { RIVER, RIVER_SHAPES, BANK_EDGE, setRiver, clamp, froude, powerWash } from './physics.js';
-import { createRenderer, boatColor, waterColour } from './render.js';
+import { createRenderer, boatColor, waterColour, waveMapColour, WAVE_MAP_RANGE } from './render.js';
 import { buildBoatEditor, loadSavedBoats } from './boatEditor.js';
 import { createRiverEditor } from './riverEditor.js';
 
@@ -223,6 +223,7 @@ function showControls() {
     otherPower: racers || (!!sc.passer && !passerMotor),
     rebound: $('wash').value === 'rebound',
     washKey: $('wash').value !== 'off',
+    sciRebound: $('sciColours').checked && $('wash').value === 'rebound',
   };
   for (const el of document.querySelectorAll('[data-control]')) el.hidden = !show[el.dataset.control];
 
@@ -300,14 +301,22 @@ function bindPlayerInput() {
   }
 }
 
-// Colour key for the water, built from the same colour function as the
+// Colour key for the water, built from the same colour functions as the
 // drawing so the two always match. Wash is shown over deep mid-river water.
 function buildLegend() {
   const rgb = (c) => `rgb(${c.join(',')})`;
   const steps = (from, to, n, colour) =>
     Array.from({ length: n + 1 }, (_, i) => rgb(colour(from + ((to - from) * i) / n)));
   const DEEP = 0.8;
-  const items = [
+  const cm = WAVE_MAP_RANGE * 100;
+  const split = $('sciRebound').checked;
+  const items = $('sciColours').checked ? [
+    { label: split ? 'Wave height (boats\' wash)' : 'Wave height (all waves)', control: 'washKey',
+      colours: steps(-WAVE_MAP_RANGE, WAVE_MAP_RANGE, 24, (h) => waveMapColour(0, h)), ticks: [`−${cm} cm`, '0', `+${cm} cm`] },
+    ...(split ? [{ label: 'Bank rebound (grey, exaggerated)', control: 'rebound',
+      colours: steps(-0.015, 0.015, 30, (h) => waveMapColour(0, 0, h)), ticks: ['−1 cm', '0', '+1 cm'] }] : []),
+    { label: 'Depth (darker = deeper)', colours: steps(0, 1, 8, (t) => waveMapColour(t, 0)), ticks: ['shallow', 'deep'] },
+  ] : [
     { label: 'Depth', colours: steps(0, 1, 8, (t) => waterColour(t)), ticks: ['shallow', 'deep'] },
     { label: 'Wash height (trough to crest)', control: 'washKey', colours: steps(-0.2, 0.2, 16, (h) => waterColour(DEEP, h)),
       ticks: ['−20 cm', '0', '+20 cm'] },
@@ -324,6 +333,12 @@ function buildLegend() {
 
 function buildControls() {
   buildLegend();
+  for (const id of ['sciColours', 'sciRebound']) {
+    $(id).addEventListener('change', () => {
+      buildLegend();
+      showControls();
+    });
+  }
   $('direction').innerHTML = Object.entries(DIRECTIONS)
     .map(([k, d]) => `<option value="${k}">${d.label}</option>`).join('');
   $('scenario').innerHTML = Object.entries(SCENARIOS)
@@ -442,7 +457,7 @@ function frame(now) {
   }
   const s = settings();
   const flow = $('showFlow').checked ? s.current : null;
-  renderer.draw(world, s.view, washSources(world, s), flow);
+  renderer.draw(world, s.view, washSources(world, s), flow, $('sciColours').checked, $('sciRebound').checked);
   requestAnimationFrame(frame);
 }
 
